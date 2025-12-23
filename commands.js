@@ -1,7 +1,7 @@
-const { SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, REST, Routes } = require('discord.js');
 const { getXP, appendLog } = require('./sheets');
-const { addXP } = require('./progress');
-const { CLIENT_ID, GUILD_ID } = require('./config');
+const { addXP, getNextRank } = require('./progress');
+const { CLIENT_ID, GUILD_ID, LOG_CHANNEL_ID } = require('./config');
 
 const commandsData = [
   new SlashCommandBuilder()
@@ -24,6 +24,7 @@ const commandsData = [
 ];
 
 const registerCommands = client => {
+  // /xp command
   client.commands.set('xp', {
     data: commandsData[0],
     execute: async interaction => {
@@ -31,12 +32,29 @@ const registerCommands = client => {
       const nickname = member.nickname || member.user.username;
 
       const xp = await getXP(nickname);
-      const { nextRank, progressBar } = await addXP(client, nickname, 0); // just for display
+      const { nextRank } = await addXP(client, nickname, 0); // just for display
 
-      await interaction.reply(`XP: ${xp}\nNext Rank: ${nextRank.name}\n[${progressBar}]`);
+      // Progress bar
+      const totalBlocks = 20;
+      const progress = Math.min(1, xp / nextRank.xp);
+      const filledBlocks = Math.floor(totalBlocks * progress);
+      const emptyBlocks = totalBlocks - filledBlocks;
+      const bar = '█'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+
+      const embed = new EmbedBuilder()
+        .setTitle(`${nickname} XP Progress`)
+        .addFields(
+          { name: 'Current Rank', value: `${nextRank.name}`, inline: true },
+          { name: 'Total XP', value: `${xp}`, inline: true },
+          { name: 'Rank Progress', value: `${bar} ${(progress * 100).toFixed(0)}%\n${nextRank.xp - xp} XP needed` }
+        )
+        .setColor('Blue');
+
+      await interaction.reply({ embeds: [embed] });
     }
   });
 
+  // /log command
   client.commands.set('log', {
     data: commandsData[1],
     execute: async interaction => {
@@ -48,12 +66,13 @@ const registerCommands = client => {
       const proof = interaction.options.getString('proof');
 
       await appendLog('LOG', [nickname, type, attendees.join(','), proof]);
-      await addXP(interaction.client, nickname, 10); // example XP for logging
+      await addXP(client, nickname, 10); // example XP
 
       await interaction.reply({ content: 'Event logged!', ephemeral: true });
     }
   });
 
+  // /logselfpatrol command
   client.commands.set('logselfpatrol', {
     data: commandsData[2],
     execute: async interaction => {
@@ -65,7 +84,7 @@ const registerCommands = client => {
       const proof = interaction.options.getString('proof');
 
       await appendLog('SELF_PATROL', [nickname, start, end, proof]);
-      await addXP(interaction.client, nickname, 5); // example XP
+      await addXP(client, nickname, 5); // example XP
 
       await interaction.reply({ content: 'Self patrol logged!', ephemeral: true });
     }
