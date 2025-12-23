@@ -27,9 +27,12 @@ const registerCommands = client => {
   client.commands.set('xp', {
     data: commandsData[0],
     execute: async interaction => {
-      const nickname = interaction.user.username;
+      const member = interaction.member;
+      const nickname = member.nickname || member.user.username;
+
       const xp = await getXP(nickname);
       const { nextRank, progressBar } = await addXP(client, nickname, 0); // just for display
+
       await interaction.reply(`XP: ${xp}\nNext Rank: ${nextRank.name}\n[${progressBar}]`);
     }
   });
@@ -37,13 +40,16 @@ const registerCommands = client => {
   client.commands.set('log', {
     data: commandsData[1],
     execute: async interaction => {
-      const nickname = interaction.user.username;
+      const member = interaction.member;
+      const nickname = member.nickname || member.user.username;
+
       const type = interaction.options.getString('type');
       const attendees = interaction.options.getString('attendees').split(',').map(a => a.trim());
       const proof = interaction.options.getString('proof');
 
       await appendLog('LOG', [nickname, type, attendees.join(','), proof]);
       await addXP(interaction.client, nickname, 10); // example XP for logging
+
       await interaction.reply({ content: 'Event logged!', ephemeral: true });
     }
   });
@@ -51,13 +57,16 @@ const registerCommands = client => {
   client.commands.set('logselfpatrol', {
     data: commandsData[2],
     execute: async interaction => {
-      const nickname = interaction.user.username;
+      const member = interaction.member;
+      const nickname = member.nickname || member.user.username;
+
       const start = interaction.options.getString('start');
       const end = interaction.options.getString('end');
       const proof = interaction.options.getString('proof');
 
       await appendLog('SELF_PATROL', [nickname, start, end, proof]);
       await addXP(interaction.client, nickname, 5); // example XP
+
       await interaction.reply({ content: 'Self patrol logged!', ephemeral: true });
     }
   });
@@ -79,4 +88,3 @@ const registerCommands = client => {
 };
 
 module.exports = { registerCommands };
-
