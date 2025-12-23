@@ -21,9 +21,13 @@ async function addXP(client, nickname, amount) {
 
   // Notify if user leveled up
   if (oldRank.name !== newRank.name && LOG_CHANNEL_ID) {
-    const channel = await client.channels.fetch(LOG_CHANNEL_ID);
-    if (channel) {
-      channel.send(`🎉 **${nickname}** has reached rank **${newRank.name}**!`);
+    try {
+      const channel = await client.channels.fetch(LOG_CHANNEL_ID);
+      if (channel) {
+        channel.send(`🎉 **${nickname}** has reached rank **${newRank.name}**!`);
+      }
+    } catch (err) {
+      console.error('Failed to send rank notification:', err);
     }
   }
 
