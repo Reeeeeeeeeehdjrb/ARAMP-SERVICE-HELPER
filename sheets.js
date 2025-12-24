@@ -1,7 +1,8 @@
 const { google } = require("googleapis");
 const { SHEET_ID } = require("./config");
 
-const ENV_NAME = "GOOGLE_SERVICE_ACCOUNT"; // <-- your new env var name
+// Change this if your Render env var name is different:
+const ENV_NAME = "GOOGLE_SERVICE_ACCOUNT";
 
 if (!process.env[ENV_NAME]) {
   throw new Error(`Missing ${ENV_NAME} environment variable`);
@@ -19,7 +20,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: "v4", auth });
 
 async function appendRow(tabName, valuesArray) {
-  await sheets.spreadsheets.values.append({
+  return sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
     range: `${tabName}!A:Z`,
     valueInputOption: "USER_ENTERED",
@@ -27,16 +28,8 @@ async function appendRow(tabName, valuesArray) {
   });
 }
 
-/**
- * EXPECTED XP TAB LAYOUT (computed by formulas):
- * XP!A = Nickname
- * XP!B = XP (formula or value)
- * XP!C = NextXP (formula or value, e.g. next rank requirement)
- * XP!D = Rank (formula or value)
- *
- * Example row:
- * Nickname | XP | NextXP | Rank
- */
+// Reads XP data from the XP tab.
+// Expected XP layout: A=Nickname, B=XP, C=NextXP, D=Rank
 async function getXpRowByNickname(nickname) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -56,8 +49,3 @@ async function getXpRowByNickname(nickname) {
 }
 
 module.exports = { appendRow, getXpRowByNickname };
-
-  return true;
-}
-
-module.exports = { getUserData, addXP };
