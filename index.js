@@ -1,22 +1,27 @@
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
-const commands = require('./commands');
-const { TOKEN } = require('./config');
+const express = require("express");
+const { Client, Collection, GatewayIntentBits } = require("discord.js");
+const { TOKEN } = require("./config");
+const { registerCommands } = require("./commands");
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
+// Keep-alive server (Render + UptimeRobot)
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get("/", (req, res) => res.send("Bot is alive ✅xx"));
+app.listen(PORT, () => console.log(`Keep-alive server running on port ${PORT}`));
 
+// Discord bot
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
-for (const cmd of commands) {
-  client.commands.set(cmd.data.name, cmd);
-}
 
-client.once('ready', () => {
+registerCommands(client);
+
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('interactionCreate', async interaction => {
+client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
@@ -24,22 +29,12 @@ client.on('interactionCreate', async interaction => {
     await command.execute(interaction);
   } catch (err) {
     console.error(err);
-    interaction.reply({ content: 'Error executing command.', ephemeral: true });
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: "Command error.", ephemeral: true });
+    } else {
+      await interaction.reply({ content: "Command error.", ephemeral: true });
+    }
   }
 });
-
-const express = require("express");
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get("/", (req, res) => {
-  res.send("Bot is alive ✅");
-});
-
-app.listen(PORT, () => {
-  console.log(`Keep-alive server running on port ${PORT}`);
-});
-
 
 client.login(TOKEN);
