@@ -1,50 +1,32 @@
-const { getXP, updateXP } = require('./sheets');
+const { getUserData, addXP } = require('./sheets');
 const { LOG_CHANNEL_ID } = require('./config');
 
-const XP_RANKS = [
-  { name: 'Junior Moderator', xp: 0 },
-  { name: '1 ➔ 2', xp: 50 },
-  { name: '2 ➔ 3', xp: 190 },
-  // Add more ranks here
-];
-
-function getNextRank(currentXP) {
-  return XP_RANKS.find(r => r.xp > currentXP) || XP_RANKS[XP_RANKS.length - 1];
+function progressBar(current, next) {
+  const total = 20;
+  const percent = Math.min(current / next, 1);
+  const filled = Math.floor(total * percent);
+  return '█'.repeat(filled) + '░'.repeat(total - filled);
 }
 
-async function addXP(client, nickname, amount) {
-  const oldXP = await getXP(nickname);
-  await updateXP(nickname, amount);
-  const newXP = oldXP + amount;
+async function awardXP(client, nickname, amount) {
+  const before = await getUserData(nickname);
+  if (!before) return;
 
-  const oldRank = getNextRank(oldXP);
-  const newRank = getNextRank(newXP);
+  await addXP(nickname, amount);
 
-  // Notify on rank up
-  if (oldRank.name !== newRank.name && LOG_CHANNEL_ID) {
-    try {
-      const channel = await client.channels.fetch(LOG_CHANNEL_ID);
-      if (channel) {
-        const totalBlocks = 20;
-        const progress = Math.min(1, newXP / newRank.xp);
-        const filledBlocks = Math.floor(totalBlocks * progress);
-        const emptyBlocks = totalBlocks - filledBlocks;
-        const bar = '█'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+  const after = await getUserData(nickname);
+  if (!after) return;
 
-        await channel.send(`🎉 **${nickname}** has reached rank **${newRank.name}**!\nProgress: ${bar} ${(progress * 100).toFixed(0)}%`);
-      }
-    } catch (err) {
-      console.error('Failed to send rank notification:', err);
-    }
+  // 🔔 RANK-UP DETECTION (SHEET-BASED)
+  if (before.rank !== after.rank) {
+    const channel = await client.channels.fetch(LOG_CHANNEL_ID);
+    await channel.send(
+      `🎉 **${nickname} ranked up!**\n` +
+      `**${before.rank} → ${after.rank}**`
+    );
   }
 
-  return {
-    oldXP,
-    newXP,
-    nextRank: newRank,
-    progressBar: '█'.repeat(Math.floor(20 * Math.min(1, newXP / newRank.xp))) +
-                 '░'.repeat(20 - Math.floor(20 * Math.min(1, newXP / newRank.xp)))
-  };
+  return { before, after };
 }
 
-module.exports = { getNextRank, addXP };
+module.exports = { awardXP, progressBar };
