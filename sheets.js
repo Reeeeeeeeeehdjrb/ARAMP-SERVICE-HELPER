@@ -1,13 +1,10 @@
 const { google } = require("googleapis");
-const { SHEET_ID } = require("./config");
+const { SHEET_ID, GOOGLE_CREDS_BASE64 } = require("./config");
 
-// ✅ USE YOUR EXISTING ENV VAR NAME
-const ENV_NAME = "GOOGLE_CREDS_BASE64";
+if (!SHEET_ID) throw new Error("Missing SHEET_ID env var");
+if (!GOOGLE_CREDS_BASE64) throw new Error("Missing GOOGLE_CREDS_BASE64 env var");
 
-if (!process.env[ENV_NAME]) throw new Error(`Missing ${ENV_NAME} environment variable`);
-if (!SHEET_ID) throw new Error("Missing SHEET_ID environment variable");
-
-const creds = JSON.parse(Buffer.from(process.env[ENV_NAME], "base64").toString("utf8"));
+const creds = JSON.parse(Buffer.from(GOOGLE_CREDS_BASE64, "base64").toString("utf8"));
 
 const auth = new google.auth.GoogleAuth({
   credentials: creds,
@@ -16,65 +13,46 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: "v4", auth });
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// Promise timeout wrapper
-async function withTimeout(promise, ms, label = "Sheets request") {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+// Simple timeout wrapper so Sheets can't hang forever
+async function withTimeout(promise, ms, label = "request") {
+  let t;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
   try {
     return await Promise.race([promise, timeout]);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(t);
   }
-}
-
-// Retry wrapper (handles temporary Google hiccups)
-async function withRetry(fn, tries = 3) {
-  let lastErr;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-      // backoff: 0.5s, 1s, 2s
-      await sleep(500 * Math.pow(2, i));
-    }
-  }
-  throw lastErr;
 }
 
 async function appendRow(tabName, valuesArray) {
-  return withRetry(() =>
-    withTimeout(
-      sheets.spreadsheets.values.append({
-        spreadsheetId: SHEET_ID,
-        range: `${tabName}!A:Z`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [valuesArray] },
-      }),
-      8000,
-      "appendRow"
-    )
+  return withTimeout(
+    sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `${tabName}!A:Z`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [valuesArray] },
+    }),
+    10000,
+    "appendRow"
   );
 }
 
-// XP tab expected layout: A=Nickname, B=XP, C=NextXP, D=Rank
+// EXPECTED XP TAB:
+// XP!A = Nickname
+// XP!B = XP
+// XP!C = NextXP
+// XP!D = Rank
 async function getXpRowByNickname(nickname) {
-  const res = await withRetry(() =>
-    withTimeout(
-      sheets.spreadsheets.values.get({
-        spreadsheetId: SHEET_ID,
-        range: "XP!A2:D",
-        valueRenderOption: "UNFORMATTED_VALUE",
-      }),
-      8000,
-      "getXpRowByNickname"
-    )
+  const res = await withTimeout(
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "XP!A2:D",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    }),
+    10000,
+    "getXpRowByNickname"
   );
 
   const rows = res.data.values || [];
