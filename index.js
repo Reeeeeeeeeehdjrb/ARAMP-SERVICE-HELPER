@@ -1,3 +1,4 @@
+console.log("🚀 index.js loaded");
 const { Client, Collection, GatewayIntentBits } = require("discord.js");
 const { DISCORD_TOKEN } = require("./config");
 const { registerCommands } = require("./commands");
@@ -22,5 +23,8 @@ client.on("interactionCreate", async (interaction) => {
 
   await command.execute(interaction);
 });
-
+console.log("🔑 Attempting Discord login...");
 client.login(DISCORD_TOKEN);
+client.once("ready", () => {
+  console.log("✅ Discord READY event fired");
+});
