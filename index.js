@@ -1,7 +1,7 @@
 const { Client, Collection, GatewayIntentBits } = require("discord.js");
-const { TOKEN } = require("./config");
-const { startServer } = require("./server");
+const { DISCORD_TOKEN } = require("./config");
 const { registerCommands } = require("./commands");
+const { startServer } = require("./server");
 
 startServer();
 
@@ -17,18 +17,10 @@ client.once("ready", () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const cmd = client.commands.get(interaction.commandName);
-  if (!cmd) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
 
-  try {
-    await cmd.execute(interaction);
-  } catch (err) {
-    console.error("interaction error:", err);
-    // If something explodes before defer/reply, attempt an ephemeral reply
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: "Command error.", ephemeral: true }).catch(() => {});
-    }
-  }
+  await command.execute(interaction);
 });
 
-client.login(TOKEN);
+client.login(DISCORD_TOKEN);
