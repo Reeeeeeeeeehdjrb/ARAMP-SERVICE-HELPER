@@ -1,37 +1,17 @@
 const { google } = require("googleapis");
-const { SHEET_ID } = require("./config");
+const { SHEET_ID, GOOGLE_CREDS_ENV } = require("./config");
 
-// Accept multiple env var names so we never break again
-const ENV_CANDIDATES = [
-  "GOOGLE_CREDS_BASE64",      // ✅ recommended
-  "GOOGLE_CRED_BASE64",
-  "GOOGLE_SERVICE_ACCOUNT",
-  "GOOGLE_JSON_B64",
-  "GOOGLE_SHEETS_CREDS_B64",
-];
+const ENV_NAME = GOOGLE_CREDS_ENV || "GOOGLE_CREDS_BASE64";
 
-function getCredsBase64() {
-  for (const name of ENV_CANDIDATES) {
-    if (process.env[name] && String(process.env[name]).trim().length > 0) {
-      return { name, value: process.env[name].trim() };
-    }
-  }
-  throw new Error(
-    `Missing Google creds env var. Set ONE of: ${ENV_CANDIDATES.join(", ")}`
-  );
+if (!process.env[ENV_NAME]) {
+  throw new Error(`Missing Google creds env var: ${ENV_NAME}`);
 }
 
-const found = getCredsBase64();
-console.log(`✅ Using Google creds env var: ${found.name}`);
+console.log(`✅ Using Google creds env var: ${ENV_NAME}`);
 
-let creds;
-try {
-  creds = JSON.parse(Buffer.from(found.value, "base64").toString("utf8"));
-} catch (e) {
-  throw new Error(
-    `Google creds env var "${found.name}" is not valid base64 JSON. Re-generate base64 from the ORIGINAL service account JSON file.`
-  );
-}
+const creds = JSON.parse(
+  Buffer.from(process.env[ENV_NAME], "base64").toString("utf8")
+);
 
 const auth = new google.auth.GoogleAuth({
   credentials: creds,
@@ -49,8 +29,7 @@ async function appendRow(tabName, valuesArray) {
   });
 }
 
-// XP tab expected layout:
-// A=Nickname, B=XP, C=NextXP, D=Rank  (B/C/D can be formulas)
+// XP tab expected columns: A=Nickname, B=XP, C=NextXP, D=Rank
 async function getXpRowByNickname(nickname) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
