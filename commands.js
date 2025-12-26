@@ -4,29 +4,30 @@ const { blockBar } = require("./progress");
 const { CLIENT_ID, GUILD_ID, LOG_ROLE_ID } = require("./config");
 
 function getDisplayName(member) {
-  return member.nickname || member.user.username;
+  return member?.nickname || member?.user?.username || "Unknown";
 }
 
 function hasRole(member, roleId) {
-  if (!roleId) return true;
+  if (!roleId) return true; // if you forget env var, don't lock yourself out
   return member.roles.cache.has(roleId);
 }
 
-function withTimeout(promise, ms, label = "Operation") {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    ),
-  ]);
-}
+const ALLOWED_TYPES = [
+  "Combat Training",
+  "Patrol",
+  "Recruitment Session",
+  "Special Event",
+  "Defense Training",
+];
 
 const commandsData = [
-  new SlashCommandBuilder().setName("xp").setDescription("Check XP (from Google Sheets)"),
+  new SlashCommandBuilder()
+    .setName("xp")
+    .setDescription("Check XP (from Google Sheets formulas)"),
 
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Log an event (restricted)")
+    .setDescription("Log an event (restricted role)")
     .addStringOption((opt) =>
       opt
         .setName("type")
@@ -58,33 +59,25 @@ function registerCommands(client) {
   client.commands.set("xp", {
     data: commandsData[0],
     execute: async (interaction) => {
-      await interaction.deferReply({ ephemeral: true }); // ✅ prevents "did not respond"
+      await interaction.deferReply({ ephemeral: true });
 
       const nickname = getDisplayName(interaction.member);
-
-      const row = await withTimeout(
-        getXpRowByNickname(nickname),
-        8000,
-        "Google Sheets XP lookup"
-      );
+      const row = await getXpRowByNickname(nickname);
 
       if (!row) {
         return interaction.editReply(
-          `No XP row found for **${nickname}** in the **XP** tab (XP!A).`
+          `No XP row found for **${nickname}** in the **XP** tab.\nMake sure XP!A contains your nickname exactly.`
         );
       }
 
-      const xp = row.xp;
-      const nextXp = row.nextXp;
-      const rank = row.rank || "Unknown";
-
+      const { xp, nextXp, rank } = row;
       const bar = nextXp ? blockBar(xp, nextXp) : "████████████████████";
       const needed = nextXp ? Math.max(0, nextXp - xp) : null;
 
       const embed = new EmbedBuilder()
         .setTitle(`${nickname}`)
         .addFields(
-          { name: "Rank", value: rank, inline: true },
+          { name: "Rank", value: rank || "Unknown", inline: true },
           { name: "XP", value: String(xp), inline: true },
           {
             name: "Progress",
@@ -99,11 +92,11 @@ function registerCommands(client) {
     },
   });
 
-  // /log
+  // /log (restricted role + dropdown only)
   client.commands.set("log", {
     data: commandsData[1],
     execute: async (interaction) => {
-      // Role gate first (fast)
+      // Permissions check FIRST (fast)
       if (!hasRole(interaction.member, LOG_ROLE_ID)) {
         return interaction.reply({
           content: "❌ You don’t have permission to use **/log**.",
@@ -111,7 +104,7 @@ function registerCommands(client) {
         });
       }
 
-      await interaction.deferReply({ ephemeral: true }); // ✅ prevents timeout
+      await interaction.deferReply({ ephemeral: true });
 
       const nickname = getDisplayName(interaction.member);
       const type = interaction.options.getString("type");
@@ -119,12 +112,12 @@ function registerCommands(client) {
       const proof = interaction.options.getString("proof");
       const timestamp = new Date().toISOString();
 
-      await withTimeout(
-        appendRow("LOG", [timestamp, nickname, type, attendeesRaw, proof]),
-        8000,
-        "Google Sheets append (LOG)"
-      );
+      // Extra safety (even though addChoices prevents typing)
+      if (!ALLOWED_TYPES.includes(type)) {
+        return interaction.editReply("❌ Invalid event type.");
+      }
 
+      await appendRow("LOG", [timestamp, nickname, type, attendeesRaw, proof]);
       return interaction.editReply("✅ Logged to Google Sheets (LOG).");
     },
   });
@@ -133,7 +126,7 @@ function registerCommands(client) {
   client.commands.set("logselfpatrol", {
     data: commandsData[2],
     execute: async (interaction) => {
-      await interaction.deferReply({ ephemeral: true }); // ✅ prevents timeout
+      await interaction.deferReply({ ephemeral: true });
 
       const nickname = getDisplayName(interaction.member);
       const start = interaction.options.getString("start");
@@ -141,12 +134,7 @@ function registerCommands(client) {
       const proof = interaction.options.getString("proof");
       const timestamp = new Date().toISOString();
 
-      await withTimeout(
-        appendRow("SELF_PATROL", [timestamp, nickname, start, end, proof]),
-        8000,
-        "Google Sheets append (SELF_PATROL)"
-      );
-
+      await appendRow("SELF_PATROL", [timestamp, nickname, start, end, proof]);
       return interaction.editReply("✅ Logged to Google Sheets (SELF_PATROL).");
     },
   });
@@ -161,7 +149,7 @@ function registerCommands(client) {
       });
       console.log("Commands registered.");
     } catch (err) {
-      console.error(err);
+      console.error("Command registration error:", err);
     }
   })();
 }
