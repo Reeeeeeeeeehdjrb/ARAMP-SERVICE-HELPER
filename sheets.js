@@ -1,7 +1,7 @@
 const { google } = require("googleapis");
 const { SHEET_ID } = require("./config");
 
-// Change this if your Render env var name is different:
+// 🔑 USE EXISTING ENV VAR NAME
 const ENV_NAME = "GOOGLE_CREDS_BASE64";
 
 if (!process.env[ENV_NAME]) {
@@ -19,6 +19,7 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: "v4", auth });
 
+// Append logs ONLY (no XP logic)
 async function appendRow(tabName, valuesArray) {
   return sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -28,8 +29,7 @@ async function appendRow(tabName, valuesArray) {
   });
 }
 
-// Reads XP data from the XP tab.
-// Expected XP layout: A=Nickname, B=XP, C=NextXP, D=Rank
+// Read XP ONLY (computed by Sheets formulas)
 async function getXpRowByNickname(nickname) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -38,14 +38,18 @@ async function getXpRowByNickname(nickname) {
   });
 
   const rows = res.data.values || [];
-  const row = rows.find((r) => String(r[0] || "").trim() === String(nickname).trim());
+  const row = rows.find(
+    (r) => String(r[0] || "").trim() === String(nickname).trim()
+  );
+
   if (!row) return null;
 
-  const xp = Number(row[1] ?? 0);
-  const nextXp = row[2] === "" || row[2] == null ? null : Number(row[2]);
-  const rank = String(row[3] ?? "").trim();
-
-  return { nickname: row[0], xp, nextXp, rank };
+  return {
+    nickname: row[0],
+    xp: Number(row[1] ?? 0),
+    nextXp: row[2] == null || row[2] === "" ? null : Number(row[2]),
+    rank: String(row[3] ?? "").trim(),
+  };
 }
 
 module.exports = { appendRow, getXpRowByNickname };
