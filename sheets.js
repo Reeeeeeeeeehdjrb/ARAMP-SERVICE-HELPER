@@ -1,61 +1,80 @@
 const { google } = require("googleapis");
-const { SHEET_ID, GOOGLE_B64 } = require("./config");
+const { SHEET_ID } = require("./config");
 
-if (!GOOGLE_B64) {
-  throw new Error("Missing Google base64 creds env var (GOOGLE_SERVICE_ACCOUNT or GOOGLE_CREDS_BASE64).");
-}
+// ✅ USE YOUR EXISTING ENV VAR NAME
+const ENV_NAME = "GOOGLE_CREDS_BASE64";
 
-const creds = JSON.parse(Buffer.from(GOOGLE_B64, "base64").toString("utf8"));
+if (!process.env[ENV_NAME]) throw new Error(`Missing ${ENV_NAME} environment variable`);
+if (!SHEET_ID) throw new Error("Missing SHEET_ID environment variable");
+
+const creds = JSON.parse(Buffer.from(process.env[ENV_NAME], "base64").toString("utf8"));
 
 const auth = new google.auth.GoogleAuth({
   credentials: creds,
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
 const sheets = google.sheets({ version: "v4", auth });
 
-async function withRetry(fn, tries = 4) {
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Promise timeout wrapper
+async function withTimeout(promise, ms, label = "Sheets request") {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Retry wrapper (handles temporary Google hiccups)
+async function withRetry(fn, tries = 3) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
       return await fn();
-    } catch (err) {
-      lastErr = err;
-      const code = err?.code;
-      const status = err?.response?.status;
-
-      // retry on rate limit / transient server errors
-      const retryable = code === 429 || status === 429 || (code >= 500 && code <= 599) || (status >= 500 && status <= 599);
-      if (!retryable) throw err;
-
-      const wait = 800 * Math.pow(2, i);
-      await new Promise((r) => setTimeout(r, wait));
+    } catch (e) {
+      lastErr = e;
+      // backoff: 0.5s, 1s, 2s
+      await sleep(500 * Math.pow(2, i));
     }
   }
   throw lastErr;
 }
 
-// Append a row to a tab
 async function appendRow(tabName, valuesArray) {
   return withRetry(() =>
-    sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: `${tabName}!A:Z`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [valuesArray] }
-    })
+    withTimeout(
+      sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: `${tabName}!A:Z`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [valuesArray] },
+      }),
+      8000,
+      "appendRow"
+    )
   );
 }
 
-// Read XP row by nickname
-// Expected XP layout: A=Nickname, B=XP, C=NextXP, D=Rank
+// XP tab expected layout: A=Nickname, B=XP, C=NextXP, D=Rank
 async function getXpRowByNickname(nickname) {
   const res = await withRetry(() =>
-    sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: "XP!A2:D",
-      valueRenderOption: "UNFORMATTED_VALUE"
-    })
+    withTimeout(
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: "XP!A2:D",
+        valueRenderOption: "UNFORMATTED_VALUE",
+      }),
+      8000,
+      "getXpRowByNickname"
+    )
   );
 
   const rows = res.data.values || [];
