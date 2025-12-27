@@ -1,29 +1,21 @@
 const { google } = require("googleapis");
-const { SHEET_ID } = require("./config");
+const { SHEET_ID, GOOGLE_CREDS_ENV } = require("./config");
 
-function pickCredsEnv() {
-  const candidates = ["GOOGLE_CREDS_BASE64", "GOOGLE_SERVICE_ACCOUNT", "GOOGLE_CREDS"];
-  for (const name of candidates) {
-    if (process.env[name] && String(process.env[name]).trim().length > 0) return name;
-  }
-  return null;
+// Timeout helper so Sheets never hangs forever
+function withTimeout(promise, ms, label = "timeout") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label)), ms)),
+  ]);
 }
 
-const CREDS_ENV = pickCredsEnv();
-if (!CREDS_ENV) {
-  throw new Error(
-    "Missing Google creds env var. Set one of: GOOGLE_CREDS_BASE64 / GOOGLE_SERVICE_ACCOUNT / GOOGLE_CREDS"
-  );
+if (!process.env[GOOGLE_CREDS_ENV]) {
+  throw new Error(`Missing ${GOOGLE_CREDS_ENV} environment variable`);
 }
 
-console.log(`✅ Using Google creds env var: ${CREDS_ENV}`);
-
-let creds;
-try {
-  creds = JSON.parse(Buffer.from(process.env[CREDS_ENV], "base64").toString("utf8"));
-} catch (e) {
-  throw new Error(`Google creds env var (${CREDS_ENV}) is not valid base64 JSON.`);
-}
+const creds = JSON.parse(
+  Buffer.from(process.env[GOOGLE_CREDS_ENV], "base64").toString("utf8")
+);
 
 const auth = new google.auth.GoogleAuth({
   credentials: creds,
@@ -33,25 +25,29 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: "v4", auth });
 
 async function appendRow(tabName, valuesArray) {
-  return sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID,
-    range: `${tabName}!A:Z`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [valuesArray] },
-  });
+  return withTimeout(
+    sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `${tabName}!A:Z`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [valuesArray] },
+    }),
+    8000,
+    "Google Sheets append timeout"
+  );
 }
 
-// XP tab layout expected:
-// XP!A = Nickname
-// XP!B = XP
-// XP!C = NextXP (next rank requirement)
-// XP!D = Rank
+// XP tab layout: A=Nickname, B=XP, C=NextXP, D=Rank
 async function getXpRowByNickname(nickname) {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "XP!A2:D",
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  const res = await withTimeout(
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "XP!A2:D",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    }),
+    8000,
+    "Google Sheets read timeout"
+  );
 
   const rows = res.data.values || [];
   const row = rows.find((r) => String(r[0] || "").trim() === String(nickname).trim());
