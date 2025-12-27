@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 const { appendRow, getXpRowByNickname } = require("./sheets");
 const { blockBar } = require("./progress");
 const { CLIENT_ID, GUILD_ID, LOG_ROLE_ID } = require("./config");
@@ -8,8 +8,8 @@ function getDisplayName(member) {
 }
 
 function hasRole(member, roleId) {
-  if (!roleId) return true;
-  return member.roles?.cache?.has(roleId);
+  if (!roleId) return true; // prevents locking yourself out if env var missing
+  return member.roles.cache.has(roleId);
 }
 
 const ALLOWED_TYPES = [
@@ -21,7 +21,9 @@ const ALLOWED_TYPES = [
 ];
 
 const commandsData = [
-  new SlashCommandBuilder().setName("xp").setDescription("Check XP (from Google Sheets)"),
+  new SlashCommandBuilder()
+    .setName("xp")
+    .setDescription("Check your XP (from Google Sheets)"),
 
   new SlashCommandBuilder()
     .setName("log")
@@ -42,7 +44,9 @@ const commandsData = [
     .addStringOption((opt) =>
       opt.setName("attendees").setDescription("Comma separated attendees").setRequired(true)
     )
-    .addStringOption((opt) => opt.setName("proof").setDescription("Ending proof").setRequired(true)),
+    .addStringOption((opt) =>
+      opt.setName("proof").setDescription("Ending proof").setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("logselfpatrol")
@@ -57,6 +61,7 @@ function registerCommands(client) {
   client.commands.set("xp", {
     data: commandsData[0],
     execute: async (interaction) => {
+      // ✅ prevents Discord timeout
       await interaction.deferReply({ ephemeral: true });
 
       const nickname = getDisplayName(interaction.member);
@@ -64,23 +69,27 @@ function registerCommands(client) {
 
       if (!row) {
         return interaction.editReply(
-          `No XP row found for **${nickname}** in **XP** tab.\nMake sure XP!A matches your server nickname exactly.`
+          `No XP row found for **${nickname}** in the **XP** tab (XP!A).`
         );
       }
 
-      const { xp, nextXp, rank } = row;
+      const xp = row.xp;
+      const nextXp = row.nextXp;
+      const rank = row.rank || "Unknown";
+
       const bar = nextXp ? blockBar(xp, nextXp) : "████████████████████";
       const needed = nextXp ? Math.max(0, nextXp - xp) : null;
+
+      const progressText = nextXp
+        ? `${bar}\n${xp}/${nextXp} (${needed} left)`
+        : `${bar}\nNextXP not set in sheet`;
 
       const embed = new EmbedBuilder()
         .setTitle(`${nickname}`)
         .addFields(
-          { name: "Rank", value: rank || "Unknown", inline: true },
+          { name: "Rank", value: rank, inline: true },
           { name: "XP", value: String(xp), inline: true },
-          {
-            name: "Progress",
-            value: nextXp ? `${bar}\n${xp}/${nextXp} (${needed} left)` : `${bar}\nNextXP not set in sheet`,
-          }
+          { name: "Progress", value: progressText }
         )
         .setColor(0x2f3136);
 
@@ -88,7 +97,7 @@ function registerCommands(client) {
     },
   });
 
-  // /log
+  // /log (restricted role + dropdown)
   client.commands.set("log", {
     data: commandsData[1],
     execute: async (interaction) => {
@@ -104,14 +113,12 @@ function registerCommands(client) {
       const proof = interaction.options.getString("proof");
       const timestamp = new Date().toISOString();
 
-      // extra server-side validation (even though dropdown already restricts)
+      // extra safety
       if (!ALLOWED_TYPES.includes(type)) {
         return interaction.editReply("❌ Invalid event type.");
       }
 
-      // Write ONLY logs (NO XP adding)
       await appendRow("LOG", [timestamp, nickname, type, attendeesRaw, proof]);
-
       return interaction.editReply("✅ Logged to Google Sheets (LOG).");
     },
   });
@@ -128,24 +135,23 @@ function registerCommands(client) {
       const proof = interaction.options.getString("proof");
       const timestamp = new Date().toISOString();
 
-      // Write ONLY logs (NO XP adding)
       await appendRow("SELF_PATROL", [timestamp, nickname, start, end, proof]);
-
       return interaction.editReply("✅ Logged to Google Sheets (SELF_PATROL).");
     },
   });
 
-  // Register slash commands
+  // Register slash commands to your guild (runs on startup)
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+
   (async () => {
     try {
       console.log("Registering slash commands...");
       await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
         body: commandsData.map((c) => c.toJSON()),
       });
-      console.log("✅ Commands registered.");
+      console.log("Commands registered.");
     } catch (err) {
-      console.error("❌ Command registration failed:", err);
+      console.error("Command registration error:", err);
     }
   })();
 }
