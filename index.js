@@ -1,25 +1,36 @@
-const { Client, GatewayIntentBits } = require("discord.js");
+// Minimal Discord login test bot (no commands, no sheets)
 
-console.log("Starting minimal Discord test bot...");
+const { Client, GatewayIntentBits, Events } = require("discord.js");
+
+// OPTIONAL: keep-alive web server for Render Web Service + UptimeRobot
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 10000;
+app.get("/", (req, res) => res.send("Discord test bot alive ✅"));
+app.listen(PORT, () => console.log(`Keep-alive server listening on ${PORT}`));
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing");
+  process.exit(1);
+}
+
+console.log(`✅ DISCORD_TOKEN present (length: ${process.env.DISCORD_TOKEN.length})`);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-client.once("ready", () => {
-  console.log("✅ BOT IS ONLINE");
-  console.log(`Logged in as ${client.user.tag}`);
+client.once(Events.ClientReady, (c) => {
+  console.log(`✅ LOGGED IN as ${c.user.tag}`);
+  client.user.setPresence({
+    activities: [{ name: "Discord login test ✅" }],
+    status: "online",
+  });
 });
 
-client.on("error", (e) => console.error("Client error:", e));
-client.on("warn", (w) => console.warn("Client warn:", w));
-client.on("shardError", (e) => console.error("Shard error:", e));
-client.on("invalidated", () => console.error("Client invalidated"));
+client.on("error", (err) => console.error("❌ Client error:", err));
+client.on("warn", (info) => console.warn("⚠️ Client warn:", info));
+process.on("unhandledRejection", (err) => console.error("❌ UnhandledRejection:", err));
 
-if (!process.env.DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN missing");
-  process.exit(1);
-}
-
-console.log("Attempting login...");
+console.log("🔑 Attempting Discord login...");
 client.login(process.env.DISCORD_TOKEN);
