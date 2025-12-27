@@ -1,14 +1,14 @@
-const { SlashCommandBuilder, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder, REST, Routes, EmbedBuilder } = require("discord.js");
 const { appendRow, getXpRowByNickname } = require("./sheets");
 const { blockBar } = require("./progress");
-const { CLIENT_ID, GUILD_ID, LOG_ROLE_ID, DISCORD_TOKEN } = require("./config");
+const { CLIENT_ID, GUILD_ID, LOG_ROLE_ID } = require("./config");
 
 function getDisplayName(member) {
   return member.nickname || member.user.username;
 }
 
 function hasRole(member, roleId) {
-  if (!roleId) return true;
+  if (!roleId) return true; // if unset, don't lock you out
   return member.roles?.cache?.has(roleId);
 }
 
@@ -17,7 +17,7 @@ const ALLOWED_TYPES = [
   "Patrol",
   "Recruitment Session",
   "Special Event",
-  "Defense Training"
+  "Defense Training",
 ];
 
 const commandsData = [
@@ -27,7 +27,7 @@ const commandsData = [
 
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Log an event (restricted role)")
+    .setDescription("Log an event (restricted)")
     .addStringOption((opt) =>
       opt
         .setName("type")
@@ -45,7 +45,7 @@ const commandsData = [
       opt.setName("attendees").setDescription("Comma separated attendees").setRequired(true)
     )
     .addStringOption((opt) =>
-      opt.setName("proof").setDescription("Ending proof").setRequired(true)
+      opt.setName("proof").setDescription("Ending proof (link/text)").setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -53,46 +53,49 @@ const commandsData = [
     .setDescription("Log a self patrol")
     .addStringOption((opt) => opt.setName("start").setDescription("Start time").setRequired(true))
     .addStringOption((opt) => opt.setName("end").setDescription("End time").setRequired(true))
-    .addStringOption((opt) => opt.setName("proof").setDescription("Proof").setRequired(true))
+    .addStringOption((opt) => opt.setName("proof").setDescription("Proof").setRequired(true)),
 ];
-
-async function registerSlashCommands() {
-  const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
-    body: commandsData.map((c) => c.toJSON())
-  });
-}
 
 function registerCommands(client) {
   // /xp
   client.commands.set("xp", {
     data: commandsData[0],
     execute: async (interaction) => {
-      // ✅ prevents Discord timeout
+      // ✅ ACK within 3 seconds to prevent timeout
       await interaction.deferReply({ ephemeral: true });
 
       const nickname = getDisplayName(interaction.member);
-      const row = await getXpRowByNickname(nickname);
 
-      if (!row) {
-        return interaction.editReply(`No XP row found for **${nickname}** in XP!A.`);
+      try {
+        const row = await getXpRowByNickname(nickname);
+        if (!row) {
+          return interaction.editReply(
+            `No XP row found for **${nickname}** in **XP** tab.\nMake sure XP!A has the nickname exactly.`
+          );
+        }
+
+        const { xp, nextXp, rank } = row;
+        const bar = nextXp ? blockBar(xp, nextXp) : "████████████████████";
+        const needed = nextXp ? Math.max(0, nextXp - xp) : null;
+
+        const embed = new EmbedBuilder()
+          .setTitle(`${nickname}`)
+          .addFields(
+            { name: "Rank", value: rank || "Unknown", inline: true },
+            { name: "XP", value: String(xp), inline: true },
+            {
+              name: "Progress",
+              value: nextXp ? `${bar}\n${xp}/${nextXp} (${needed} left)` : `${bar}\nNextXP not set in sheet`,
+            }
+          )
+          .setColor(0x2f3136);
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (err) {
+        console.error("XP command error:", err);
+        return interaction.editReply(`❌ XP failed: ${err.message}`);
       }
-
-      const { xp, nextXp, rank } = row;
-      const bar = nextXp ? blockBar(xp, nextXp) : "████████████████████";
-      const needed = nextXp ? Math.max(0, nextXp - xp) : null;
-
-      const embed = new EmbedBuilder()
-        .setTitle(`${nickname}`)
-        .addFields(
-          { name: "Rank", value: rank || "Unknown", inline: true },
-          { name: "XP", value: String(xp), inline: true },
-          { name: "Progress", value: nextXp ? `${bar}\n${xp}/${nextXp} (${needed} left)` : `${bar}\nNextXP not set` }
-        )
-        .setColor(0x2f3136);
-
-      return interaction.editReply({ embeds: [embed] });
-    }
+    },
   });
 
   // /log
@@ -101,26 +104,31 @@ function registerCommands(client) {
     execute: async (interaction) => {
       await interaction.deferReply({ ephemeral: true });
 
+      // ✅ Role restriction
       if (!hasRole(interaction.member, LOG_ROLE_ID)) {
         return interaction.editReply("❌ You don’t have permission to use **/log**.");
       }
 
       const nickname = getDisplayName(interaction.member);
       const type = interaction.options.getString("type");
-      const attendeesRaw = interaction.options.getString("attendees");
+      const attendeesRaw = interaction.options.getString("attendees"); // keep comma-separated
       const proof = interaction.options.getString("proof");
+      const timestamp = new Date().toISOString();
 
+      // ✅ Server-side validation (only allow menu values)
       if (!ALLOWED_TYPES.includes(type)) {
         return interaction.editReply("❌ Invalid event type.");
       }
 
-      const timestamp = new Date().toISOString();
-
-      // ✅ ONLY writes log row — no XP math in bot
-      await appendRow("LOG", [timestamp, nickname, type, attendeesRaw, proof]);
-
-      return interaction.editReply("✅ Logged to Google Sheets (LOG).");
-    }
+      try {
+        // Writes ONLY to sheet (NO XP adding)
+        await appendRow("LOG", [timestamp, nickname, type, attendeesRaw, proof]);
+        return interaction.editReply("✅ Logged to Google Sheets (LOG).");
+      } catch (err) {
+        console.error("LOG command error:", err);
+        return interaction.editReply(`❌ Log failed: ${err.message}`);
+      }
+    },
   });
 
   // /logselfpatrol
@@ -135,13 +143,29 @@ function registerCommands(client) {
       const proof = interaction.options.getString("proof");
       const timestamp = new Date().toISOString();
 
-      await appendRow("SELF_PATROL", [timestamp, nickname, start, end, proof]);
-
-      return interaction.editReply("✅ Logged to Google Sheets (SELF_PATROL).");
-    }
+      try {
+        await appendRow("SELF_PATROL", [timestamp, nickname, start, end, proof]);
+        return interaction.editReply("✅ Logged to Google Sheets (SELF_PATROL).");
+      } catch (err) {
+        console.error("SELF_PATROL command error:", err);
+        return interaction.editReply(`❌ Self patrol log failed: ${err.message}`);
+      }
+    },
   });
 
-  return { registerSlashCommands };
+  // Register slash commands
+  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+  (async () => {
+    try {
+      console.log("Registering slash commands...");
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
+        body: commandsData.map((c) => c.toJSON()),
+      });
+      console.log("Commands registered.");
+    } catch (err) {
+      console.error("Command registration error:", err);
+    }
+  })();
 }
 
-module.exports = { registerCommands, registerSlashCommands };
+module.exports = { registerCommands };
