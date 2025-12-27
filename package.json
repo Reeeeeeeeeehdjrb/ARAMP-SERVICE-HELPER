@@ -1,5 +1,5 @@
 {
-  "name": "discord-login-test",
+  "name": "aramp-service-helper",
   "version": "1.0.0",
   "main": "index.js",
   "type": "commonjs",
@@ -7,7 +7,8 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3",
-    "express": "^4.19.2"
+    "discord.js": "^14.16.0",
+    "express": "^4.19.2",
+    "googleapis": "^144.0.0"
   }
 }
