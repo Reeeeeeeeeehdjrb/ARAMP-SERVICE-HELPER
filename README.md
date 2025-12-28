@@ -3,18 +3,18 @@ SSHA for Rowifi Integrated is:
 
 ENVIROMENTAL VARIABLES
 
-DISCORD_TOKEN
+  DISCORD_TOKEN
 
-CLIENT_ID
+  CLIENT_ID
 
-GUILD_ID
+  GUILD_ID
 
-SHEET_ID
+  SHEET_ID
 
-PORT (Set to 10000)
+  PORT (Set to 10000)
 
-GOOGLE_CREDS_BASE64
+  GOOGLE_CREDS_BASE64
 
-ROWIFI_TOKEN (your RoWifi API token from their dashboard, Only if you use Rowifi Integrated)
+  ROWIFI_TOKEN (your RoWifi API token from their dashboard, Only if you use Rowifi Integrated)
 
-LOG_ROLE_ID (role allowed to use /log)
+  LOG_ROLE_ID (role allowed to use /log)
