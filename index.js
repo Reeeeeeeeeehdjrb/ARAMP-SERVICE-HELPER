@@ -1,43 +1,48 @@
-console.log("🚀 index.js loaded");
-
+const express = require("express");
 const { Client, Collection, GatewayIntentBits } = require("discord.js");
-const { startServer } = require("./server");
-const { registerCommands } = require("./commands");
 const { TOKEN } = require("./config");
+const { registerCommands } = require("./commands");
 
-// Keep-alive server for Render/UptimeRobot
-startServer();
+// Keep-alive server (Render + UptimeRobot)
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.get("/", (req, res) => res.send("Bot is alive ✅"));
+app.listen(PORT, () => console.log(`Keep-alive server running on port ${PORT}`));
 
 // Discord client
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
+
 client.commands = new Collection();
 
+console.log("🚀 index.js loaded");
+
+// Register commands + handlers
 registerCommands(client);
 
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-client.on("error", (e) => console.error("Discord client error:", e));
-client.on("shardError", (e) => console.error("Discord shard error:", e));
-
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
+  const cmd = client.commands.get(interaction.commandName);
+  if (!cmd) return;
 
   try {
-    await command.execute(interaction);
+    await cmd.execute(interaction);
   } catch (err) {
-    console.error("Command execution error:", err);
+    console.error("Command error:", err);
 
-    // If we already deferred, editReply is safe. Otherwise reply.
+    // Try to respond safely
     try {
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply("❌ Error running command.");
+        await interaction.editReply("❌ Command error.");
       } else {
-        await interaction.reply({ content: "❌ Error running command.", ephemeral: true });
+        await interaction.reply({ content: "❌ Command error.", flags: 64 });
       }
     } catch {}
   }
