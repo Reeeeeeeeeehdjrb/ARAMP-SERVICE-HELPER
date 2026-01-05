@@ -72,7 +72,7 @@ const commandsData = [
           { name: "Combat Training", value: "Combat Training" },
           { name: "Patrol", value: "Patrol" },
           { name: "Recruitment Session", value: "Recruitment Session" },
-          { name: "Special Event", value: "Special Event" },
+          { name: "Dicipline Training", value: "Dicipline Training" },
           { name: "Defense Training", value: "Defense Training" }
         )
     )
